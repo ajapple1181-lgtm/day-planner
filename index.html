@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>1日の予定プランナー</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <button id="btnToday" class="btn">今日</button>
+    <input id="datePicker" type="date" class="date" />
+    <div class="spacer"></div>
+    <button id="btnSettings" class="btn">設定</button>
+    <button id="btnAdd" class="btn primary">＋ブロック</button>
+  </header>
+
+  <main class="layout">
+    <!-- Timeline -->
+    <section class="timelineCard">
+      <div class="timelineHeader">
+        <div class="hint">ドラッグで移動／下端ドラッグで時間変更（5分刻み）</div>
+      </div>
+
+      <div class="timelineWrap" id="timelineWrap">
+        <div class="timeCol" id="timeCol"></div>
+        <div class="gridCol">
+          <div class="grid" id="grid"></div>
+          <div class="eventsLayer" id="eventsLayer"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Side panel -->
+    <aside class="side">
+      <section class="panel">
+        <h2>集計</h2>
+        <div id="summary" class="summary"></div>
+      </section>
+
+      <section class="panel">
+        <h2>勉強（この日にやること）</h2>
+
+        <form id="taskForm" class="formRow">
+          <input id="taskTitle" class="input" placeholder="例：化学 セミナー p.10-20" required />
+          <input id="taskMin" class="input small" type="number" min="5" step="5" placeholder="分" required />
+          <button class="btn">追加</button>
+        </form>
+
+        <div class="row">
+          <label class="check">
+            <input id="chkShowAllTasks" type="checkbox" />
+            全タスク表示
+          </label>
+          <div class="spacer"></div>
+          <label class="check">
+            <input id="chkOverwrite" type="checkbox" />
+            上書き生成
+          </label>
+        </div>
+
+        <div class="row" style="margin-top:8px;">
+          <button id="btnAutoBuild" class="btn primary" type="button">放課後〜就寝を自動で組み立て</button>
+        </div>
+
+        <div class="subhint">
+          平日は「移動7:30→授業8:30→授業終了(設定)」を自動生成。<br>
+          自動組み立ては「授業終了後→就寝→翌朝起床(睡眠)」が対象（睡眠は0:00で分割）。
+        </div>
+
+        <div id="tasksList" class="tasks" style="margin-top:12px;"></div>
+      </section>
+
+      <section class="panel">
+        <h2>使い方メモ</h2>
+        <ul class="memo">
+          <li>平日テンプレは「設定」で編集可能（起床/移動開始/授業開始/授業終了）</li>
+          <li>部活などの固定予定は先に「＋ブロック」で入れると、自動が避けて配置します</li>
+          <li>勉強ブロック完了で、リンク先タスクの進捗（分）が増えます</li>
+          <li>データは端末内（localStorage）保存</li>
+        </ul>
+      </section>
+    </aside>
+  </main>
+
+  <!-- Add/Edit modal -->
+  <dialog id="blockDialog" class="dialog">
+    <form id="blockForm" method="dialog" class="dialogBody">
+      <h3 id="dlgTitle">ブロック</h3>
+
+      <div class="field">
+        <label>種類</label>
+        <select id="blkType" class="input">
+          <option value="sleep">就寝</option>
+          <option value="eat">食事</option>
+          <option value="move">移動</option>
+          <option value="class">授業</option>
+          <option value="club">部活</option>
+          <option value="prep">準備</option>
+          <option value="bath">風呂</option>
+          <option value="study">勉強</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>開始時刻</label>
+        <div class="row">
+          <input id="blkStart" class="input" type="time" step="300" />
+          <button type="button" id="btnAutoPlace" class="btn">自動配置</button>
+        </div>
+        <div class="subhint">空欄でもOK（自動配置推奨）</div>
+      </div>
+
+      <div class="field">
+        <label>時間（分）</label>
+        <input id="blkDur" class="input" type="number" min="5" step="5" placeholder="空欄ならデフォルト" />
+      </div>
+
+      <div class="field">
+        <label>メモ</label>
+        <input id="blkNote" class="input" placeholder="例：移動（バス）/ 英語 Discussion 準備" />
+      </div>
+
+      <div class="field" id="studyLinkBox">
+        <label>勉強タスクにリンク</label>
+        <select id="blkTaskLink" class="input">
+          <option value="">（リンクしない）</option>
+        </select>
+        <div class="row">
+          <input id="blkUnits" class="input small" type="number" min="5" step="5" placeholder="進捗(分)" />
+          <span class="subhint">完了時にこの分だけタスク進捗が増える</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="check">
+          <input id="blkDone" type="checkbox" />
+          完了
+        </label>
+      </div>
+
+      <div class="dialogActions">
+        <button type="button" id="btnDelete" class="btn danger">削除</button>
+        <div class="spacer"></div>
+        <button type="button" id="btnCancel" class="btn">キャンセル</button>
+        <button id="btnSave" class="btn primary" value="ok">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Settings modal -->
+  <dialog id="settingsDialog" class="dialog">
+    <form id="settingsForm" method="dialog" class="dialogBody">
+      <h3>設定</h3>
+
+      <h4 class="settingsH">学校（平日テンプレ）</h4>
+      <div class="settingsGrid2">
+        <div class="settingsLabel">起床</div>
+        <input id="setWake" class="input" type="time" step="300" />
+
+        <div class="settingsLabel">登校（移動）開始</div>
+        <input id="setCommuteStart" class="input" type="time" step="300" />
+
+        <div class="settingsLabel">授業開始</div>
+        <input id="setClassStart" class="input" type="time" step="300" />
+
+        <div class="settingsLabel">授業終了（月水金）</div>
+        <input id="setEndMWF" class="input" type="time" step="300" />
+
+        <div class="settingsLabel">授業終了（火木）</div>
+        <input id="setEndTuTh" class="input" type="time" step="300" />
+      </div>
+
+      <h4 class="settingsH">放課後の自動挿入</h4>
+      <div class="settingsGrid2">
+        <label class="settingsLabel checkLine"><input id="enHomeMove" type="checkbox" /> 帰宅移動</label>
+        <input id="minHomeMove" class="input" type="number" min="5" step="5" />
+
+        <label class="settingsLabel checkLine"><input id="enDinner" type="checkbox" /> 夕食</label>
+        <input id="minDinner" class="input" type="number" min="5" step="5" />
+
+        <label class="settingsLabel checkLine"><input id="enBath" type="checkbox" /> 風呂</label>
+        <input id="minBath" class="input" type="number" min="5" step="5" />
+
+        <label class="settingsLabel checkLine"><input id="enPrep" type="checkbox" /> 準備</label>
+        <input id="minPrep" class="input" type="number" min="5" step="5" />
+      </div>
+
+      <h4 class="settingsH">種類ごとのデフォルト時間（分）</h4>
+      <div id="settingsGrid" class="settingsGrid"></div>
+
+      <div class="dialogActions">
+        <button type="button" id="btnReset" class="btn">初期化</button>
+        <div class="spacer"></div>
+        <button type="button" id="btnSettingsClose" class="btn primary">閉じる</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="./app.js"></script>
+</body>
+    </html>
