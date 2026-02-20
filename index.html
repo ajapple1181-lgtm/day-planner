@@ -2,187 +2,52 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>1日の予定プランナー</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f1a" />
+  <title>Daily schedule planner</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
   <header class="topbar">
-    <button id="btnToday" class="btn">今日</button>
-    <input id="datePicker" type="date" class="date" />
-    <div class="spacer"></div>
-    <button id="btnSettings" class="btn">設定</button>
-    <button id="btnAdd" class="btn primary">＋ブロック</button>
+    <div class="topbar-left">
+      <div class="brand">Daily schedule planner</div>
+    </div>
+
+    <div class="topbar-right">
+      <div id="remainPill" class="remainPill" hidden>
+        <div class="remainTime" id="remainTime">--:--</div>
+        <div class="remainLabel" id="remainLabel">残り</div>
+      </div>
+
+      <button id="nowBtn" class="btn btnGhost">NOW</button>
+      <div class="nowClock" id="nowClock">--:--</div>
+    </div>
   </header>
 
-  <main class="layout">
-    <!-- Timeline (48h) -->
-    <section class="timelineCard">
-      <div class="timelineHeader">
-        <div class="titleLine" id="rangeTitle"></div>
-      </div>
+  <nav class="tabs">
+    <button class="tabBtn isActive" data-tab="life">生活</button>
+    <button class="tabBtn" data-tab="study">勉強</button>
+    <button class="tabBtn" data-tab="timeline">タイムライン</button>
+  </nav>
 
-      <div class="timelineWrap" id="timelineWrap">
-        <div class="timeCol" id="timeCol"></div>
-        <div class="gridCol">
-          <div class="grid" id="grid"></div>
-          <div class="eventsLayer" id="eventsLayer"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Side -->
-    <aside class="side">
-      <section class="panel">
-        <h2>終了時刻</h2>
-        <div class="settingsGrid2">
-          <div class="settingsLabel">授業終了</div>
-          <input id="overrideClassEnd" class="input" type="time" step="300" />
-
-          <div class="settingsLabel">就寝</div>
-          <input id="overrideBed" class="input" type="time" step="300" />
-        </div>
-        <div class="row" style="margin-top:10px;">
-          <label class="check"><input id="chkOverwrite" type="checkbox" /> 上書き生成</label>
-          <div class="spacer"></div>
-          <button id="btnAutoBuild" class="btn primary" type="button">放課後〜就寝を自動生成</button>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>集計</h2>
-        <div id="summary" class="summary"></div>
-      </section>
-
-      <section class="panel">
-        <h2>範囲</h2>
-
-        <form id="rangeForm" class="formRow">
-          <input id="rangeTitleInput" class="input" placeholder="例：化学 セミナー p.10-20" required />
-          <input id="rangeTotalInput" class="input small" type="number" min="5" step="5" placeholder="total(分)" required />
-          <button class="btn">追加</button>
-        </form>
-
-        <div id="rangesList" class="tasks"></div>
-      </section>
-    </aside>
+  <main class="main">
+    <section id="tab-life" class="tabPage"></section>
+    <section id="tab-study" class="tabPage" hidden></section>
+    <section id="tab-timeline" class="tabPage" hidden></section>
   </main>
 
-  <!-- Block dialog -->
-  <dialog id="blockDialog" class="dialog">
-    <form id="blockForm" method="dialog" class="dialogBody">
-      <h3 id="dlgTitle">ブロック</h3>
-
-      <div class="field">
-        <label>日付</label>
-        <select id="blkDay" class="input"></select>
+  <!-- Modal -->
+  <div id="modalRoot" class="modalRoot" hidden>
+    <div class="modalOverlay"></div>
+    <div class="modalPanel" role="dialog" aria-modal="true">
+      <div class="modalHeader">
+        <div id="modalTitle" class="modalTitle">---</div>
       </div>
+      <div id="modalBody" class="modalBody"></div>
+      <div id="modalFooter" class="modalFooter"></div>
+    </div>
+  </div>
 
-      <div class="field">
-        <label>種類</label>
-        <select id="blkType" class="input">
-          <option value="sleep">就寝</option>
-          <option value="eat">食事</option>
-          <option value="move">移動</option>
-          <option value="class">授業</option>
-          <option value="club">部活</option>
-          <option value="prep">準備</option>
-          <option value="bath">風呂</option>
-          <option value="study">勉強</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label>開始</label>
-        <input id="blkStart" class="input" type="time" step="300" />
-      </div>
-
-      <div class="field">
-        <label>時間（分）</label>
-        <input id="blkDur" class="input" type="number" min="5" step="5" />
-      </div>
-
-      <div class="field">
-        <label>メモ</label>
-        <input id="blkNote" class="input" />
-      </div>
-
-      <div class="field" id="studyLinkBox">
-        <label>範囲にリンク</label>
-        <select id="blkRangeLink" class="input">
-          <option value="">（リンクしない）</option>
-        </select>
-        <div class="row">
-          <input id="blkUnits" class="input small" type="number" min="5" step="5" placeholder="進捗(分)" />
-          <span class="subhint">完了時にこの分だけ進捗が増える</span>
-        </div>
-      </div>
-
-      <div class="field">
-        <label class="check">
-          <input id="blkDone" type="checkbox" />
-          完了
-        </label>
-      </div>
-
-      <div class="dialogActions">
-        <button type="button" id="btnDelete" class="btn danger">削除</button>
-        <div class="spacer"></div>
-        <button type="button" id="btnCancel" class="btn">キャンセル</button>
-        <button id="btnSave" class="btn primary" value="ok">保存</button>
-      </div>
-    </form>
-  </dialog>
-
-  <!-- Settings dialog -->
-  <dialog id="settingsDialog" class="dialog">
-    <form id="settingsForm" method="dialog" class="dialogBody">
-      <h3>設定</h3>
-
-      <h4 class="settingsH">平日テンプレ</h4>
-      <div class="settingsGrid2">
-        <div class="settingsLabel">起床</div>
-        <input id="setWake" class="input" type="time" step="300" />
-
-        <div class="settingsLabel">登校開始</div>
-        <input id="setCommuteStart" class="input" type="time" step="300" />
-
-        <div class="settingsLabel">授業開始</div>
-        <input id="setClassStart" class="input" type="time" step="300" />
-
-        <div class="settingsLabel">授業終了（月水金）</div>
-        <input id="setEndMWF" class="input" type="time" step="300" />
-
-        <div class="settingsLabel">授業終了（火木）</div>
-        <input id="setEndTuTh" class="input" type="time" step="300" />
-      </div>
-
-      <h4 class="settingsH">放課後の自動挿入</h4>
-      <div class="settingsGrid2">
-        <label class="settingsLabel checkLine"><input id="enHomeMove" type="checkbox" /> 帰宅移動</label>
-        <input id="minHomeMove" class="input" type="number" min="5" step="5" />
-
-        <label class="settingsLabel checkLine"><input id="enDinner" type="checkbox" /> 夕食</label>
-        <input id="minDinner" class="input" type="number" min="5" step="5" />
-
-        <label class="settingsLabel checkLine"><input id="enBath" type="checkbox" /> 風呂</label>
-        <input id="minBath" class="input" type="number" min="5" step="5" />
-
-        <label class="settingsLabel checkLine"><input id="enPrep" type="checkbox" /> 準備</label>
-        <input id="minPrep" class="input" type="number" min="5" step="5" />
-      </div>
-
-      <h4 class="settingsH">種類ごとのデフォルト時間（分）</h4>
-      <div id="defaultsGrid" class="settingsGrid"></div>
-
-      <div class="dialogActions">
-        <button type="button" id="btnReset" class="btn">初期化</button>
-        <div class="spacer"></div>
-        <button type="button" id="btnSettingsClose" class="btn primary">閉じる</button>
-      </div>
-    </form>
-  </dialog>
-
-  <script src="./app.js"></script>
+  <script src="./app.js" defer></script>
 </body>
 </html>
