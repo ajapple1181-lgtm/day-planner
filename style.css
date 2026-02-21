@@ -19,6 +19,10 @@
   /* Timeline fixed grid */
   --slot-h: 18px;                 /* 15分あたりの高さ */
   --hour-h: calc(var(--slot-h) * 4);
+
+  /* JSで上書きされる（固定ヘッダーの高さ） */
+  --topbar-h: 56px;
+  --tabs-h: 64px;
 }
 
 *{box-sizing:border-box;}
@@ -30,10 +34,11 @@ body{
   font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
 }
 
+/* ===== fixed header ===== */
 .topbar{
-  position:sticky;
-  top:0;
-  z-index:10;
+  position:fixed;
+  top:0; left:0; right:0;
+  z-index:1000;
   background:linear-gradient(180deg, rgba(17,24,42,.98), rgba(17,24,42,.86));
   border-bottom:1px solid var(--line);
   padding:10px 12px;
@@ -85,9 +90,10 @@ body{
 }
 
 .tabs{
-  position:sticky;
-  top:56px;
-  z-index:9;
+  position:fixed;
+  top:var(--topbar-h);
+  left:0; right:0;
+  z-index:999;
   background:rgba(11,15,26,.92);
   border-bottom:1px solid var(--line);
   padding:10px 12px;
@@ -109,8 +115,10 @@ body{
   border-color:rgba(255,255,255,.18);
 }
 
+/* mainは固定ヘッダー分だけ下げる */
 .main{
   padding:12px;
+  padding-top: calc(var(--topbar-h) + var(--tabs-h) + 12px);
   max-width:980px;
   margin:0 auto;
 }
@@ -142,7 +150,7 @@ body{
   margin-bottom:6px;
 }
 
-/* ★ time を追加 */
+/* timeも含める */
 .input, select, input[type="text"], input[type="number"], input[type="date"], input[type="time"]{
   width:100%;
   background:var(--panel2);
@@ -174,9 +182,7 @@ input::placeholder{ color:rgba(238,243,255,.35); font-weight:900; }
   background:linear-gradient(180deg, rgba(255,93,93,.25), rgba(255,93,93,.14));
   border-color:rgba(255,93,93,.55);
 }
-.btnGhost{
-  background:transparent;
-}
+.btnGhost{ background:transparent; }
 .btnSmall{
   padding:10px 12px;
   border-radius:14px;
@@ -203,6 +209,40 @@ input::placeholder{ color:rgba(238,243,255,.35); font-weight:900; }
   margin-top:6px;
 }
 
+/* ===== shared block look ===== */
+.blockTop{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.blockTime{
+  font-weight:1000;
+  font-variant-numeric:tabular-nums;
+  color:rgba(238,243,255,.78);
+  font-size:12px;
+  white-space:nowrap;
+}
+.blockName{
+  font-weight:1000;
+  font-size:14px;
+  line-height:1.2;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.blockTag{
+  font-weight:1000;
+  font-size:12px;
+  color:var(--muted);
+}
+.taskBtns{
+  margin-left:auto;     /* ★ 右端へ */
+  flex-shrink:0;
+  gap:6px;
+}
+
 /* ===== timeline (fixed time axis) ===== */
 .timelineWrap{
   background:var(--panel);
@@ -212,7 +252,7 @@ input::placeholder{ color:rgba(238,243,255,.35); font-weight:900; }
 }
 .dayRow{
   display:grid;
-  grid-template-columns:64px 56px 1fr; /* ★ 時刻軸を追加 */
+  grid-template-columns:64px 56px 1fr;
   border-top:1px solid var(--line);
 }
 .dayRow:first-child{ border-top:0; }
@@ -227,22 +267,13 @@ input::placeholder{ color:rgba(238,243,255,.35); font-weight:900; }
   align-items:center;
   justify-content:flex-start;
 }
-.dayDate{
-  font-weight:1000;
-  font-size:14px;
-  line-height:1;
-}
-.dayWday{
-  font-weight:1000;
-  font-size:12px;
-  color:var(--muted);
-  line-height:1;
-}
+.dayDate{ font-weight:1000; font-size:14px; line-height:1; }
+.dayWday{ font-weight:1000; font-size:12px; color:var(--muted); line-height:1; }
 
 /* 時刻軸 */
 .timeAxis{
   position:relative;
-  height: calc(var(--slot-h) * 96); /* 24h * 60 / 15 = 96 */
+  height: calc(var(--slot-h) * 96);
   border-right:1px solid var(--line);
   background:rgba(255,255,255,.02);
 }
@@ -269,7 +300,7 @@ input::placeholder{ color:rgba(238,243,255,.35); font-weight:900; }
   pointer-events:none;
 }
 
-/* 予定レーン（時刻固定） */
+/* 予定レーン */
 .dayTrack{
   position:relative;
   height: calc(var(--slot-h) * 96);
@@ -291,6 +322,27 @@ input::placeholder{ color:rgba(238,243,255,.35); font-weight:900; }
     );
 }
 
+/* NOW 破線 */
+.nowLine{
+  position:absolute;
+  left:0;
+  right:0;
+  border-top:2px dashed rgba(74,163,255,.75);
+  pointer-events:none;
+}
+.nowBadge{
+  position:absolute;
+  right:8px;
+  top:-10px;
+  font-size:11px;
+  font-weight:1000;
+  color:rgba(74,163,255,.95);
+  background:rgba(74,163,255,.12);
+  border:1px solid rgba(74,163,255,.35);
+  padding:2px 8px;
+  border-radius:999px;
+}
+
 /* 絶対配置ブロック */
 .tBlock{
   position:absolute;
@@ -304,29 +356,6 @@ input::placeholder{ color:rgba(238,243,255,.35); font-weight:900; }
   flex-direction:column;
   gap:6px;
   overflow:hidden;
-}
-.tBlock .blockTop{
-  display:flex;
-  align-items:baseline;
-  justify-content:space-between;
-  gap:10px;
-}
-.tBlock .blockTime{
-  font-weight:1000;
-  font-variant-numeric:tabular-nums;
-  color:rgba(238,243,255,.78);
-  font-size:11px;
-  white-space:nowrap;
-}
-.tBlock .blockName{
-  font-weight:1000;
-  font-size:13px;
-  line-height:1.2;
-}
-.tBlock .blockTag{
-  font-weight:1000;
-  font-size:11px;
-  color:var(--muted);
 }
 
 /* subject color bar */
@@ -343,16 +372,8 @@ input::placeholder{ color:rgba(238,243,255,.35); font-weight:900; }
 .bar.gray{ background:var(--gray); }
 
 /* modal */
-.modalRoot{
-  position:fixed;
-  inset:0;
-  z-index:100;
-}
-.modalOverlay{
-  position:absolute;
-  inset:0;
-  background:rgba(0,0,0,.55);
-}
+.modalRoot{ position:fixed; inset:0; z-index:2000; }
+.modalOverlay{ position:absolute; inset:0; background:rgba(0,0,0,.55); }
 .modalPanel{
   position:absolute;
   left:50%;
@@ -367,17 +388,9 @@ input::placeholder{ color:rgba(238,243,255,.35); font-weight:900; }
   border-radius:18px;
   overflow:hidden;
 }
-.modalHeader{
-  padding:12px 12px 10px;
-  border-bottom:1px solid var(--line);
-}
-.modalTitle{
-  font-weight:1000;
-}
-.modalBody{
-  padding:12px;
-  overflow:auto;
-}
+.modalHeader{ padding:12px 12px 10px; border-bottom:1px solid var(--line); }
+.modalTitle{ font-weight:1000; }
+.modalBody{ padding:12px; overflow:auto; }
 .modalFooter{
   padding:12px;
   border-top:1px solid var(--line);
@@ -392,11 +405,7 @@ input::placeholder{ color:rgba(238,243,255,.35); font-weight:900; }
   font-weight:1000;
   font-variant-numeric:tabular-nums;
 }
-.runnerTimeSmall{
-  color:var(--muted);
-  font-weight:900;
-  font-size:12px;
-}
+.runnerTimeSmall{ color:var(--muted); font-weight:900; font-size:12px; }
 .stepBtn{
   width:100%;
   border:1px solid var(--line);
@@ -416,8 +425,4 @@ input::placeholder{ color:rgba(238,243,255,.35); font-weight:900; }
 }
 .stepRight{ color:rgba(238,243,255,.72); font-size:12px; font-weight:1000; }
 
-.smallX{
-  width:44px;
-  text-align:center;
-  padding:10px 0;
-    }
+.smallX{ width:44px; text-align:center; padding:10px 0; }
