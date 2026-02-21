@@ -1007,16 +1007,350 @@ function setTab(tabKey) {
 tabBtns.forEach(btn => btn.addEventListener("click", () => setTab(btn.dataset.tab)));
 
 /* ===== render: life ===== */
-/* （あなたの現行 renderLife を維持：ここは省略せず全文必要なら言って。
-   今回の要求は「timeline NOW 破線」「固定ヘッダー」「ボタン右寄せ」なので、
-   生活画面自体は既にあなたの希望どおり動いています。）
-   ※ただし既に「時計型に変更済みの版」を使っている前提です。 */
-
 function renderLife() {
-  // ここはあなたの現行コードのまま使ってOK（変更なし）
-  // ※もしまだselectが残ってるなら、以前渡した mkTimeInput の差し替え版にします。
   tabLife.innerHTML = "";
-  tabLife.appendChild(el("div","card","（renderLifeは現行のまま）"));
+
+  const card = el("div", "card");
+  const topRow = el("div", "row");
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = state.selectedDate;
+  dateInput.addEventListener("change", () => {
+    state.selectedDate = dateInput.value || todayStr();
+    saveState();
+    render();
+  });
+
+  const tplSel = mkSelect(
+    ["（テンプレ）", "月水金", "火木", "土", "日"],
+    "（テンプレ）",
+    () => {},
+    false
+  );
+
+  const btnApplyTpl = mkBtn("適用", "btnPrimary", () => {
+    const name = tplSel.value;
+    let t;
+    if (name === "月水金") t = templateMonWedFri();
+    else if (name === "火木") t = templateTueThu();
+    else if (name === "土") t = templateSat();
+    else if (name === "日") t = templateSun();
+    else t = templateByWeekday(state.selectedDate);
+
+    state.lifeByDate[state.selectedDate] = deepClone(t);
+    saveState();
+    render();
+  });
+
+  topRow.appendChild(wrapField("日付", dateInput));
+  topRow.appendChild(wrapField("テンプレ", tplSel));
+  topRow.appendChild(btnApplyTpl);
+
+  card.appendChild(topRow);
+  tabLife.appendChild(card);
+
+  const life = state.lifeByDate[state.selectedDate] || null;
+
+  if (!life) {
+    const empty = el("div", "card");
+    empty.appendChild(el("div", "note", "生活設定がまだありません。テンプレ適用か、下で設定してください。"));
+    tabLife.appendChild(empty);
+    state.lifeByDate[state.selectedDate] = emptyLifeSettings();
+    saveState();
+  }
+
+  const L = state.lifeByDate[state.selectedDate];
+
+  const settingsCard = el("div", "card");
+  settingsCard.appendChild(el("div", "", "生活設定"));
+
+  const g = el("div", "grid2");
+
+  const lessonSel = mkSelect(["あり","なし"], L.lesson || "なし", (v)=>{ L.lesson=v; saveState(); render(); });
+  const clubSel = mkSelect(["あり","なし"], L.club || "なし", (v)=>{ L.club=v; saveState(); render(); });
+  g.appendChild(wrapField("授業", lessonSel));
+  g.appendChild(wrapField("部活", clubSel));
+
+  // ★ 2回目30分移動開始以外：時計型
+  const showMorning = (L.lesson==="あり" || L.club==="あり" || !!L.morningMoveStart);
+  if (showMorning) {
+    const st = mkTimeInput(L.morningMoveStart || "", (v)=>{ L.morningMoveStart=v; saveState(); render(); }, 60);
+    const minIn = document.createElement("input");
+    minIn.type = "number";
+    minIn.value = String(L.morningMoveMin ?? 60);
+    minIn.addEventListener("change", ()=>{ L.morningMoveMin = clamp(parseInt(minIn.value||"60",10), 1, 240); saveState(); render(); });
+    g.appendChild(wrapField("朝の移動 開始", st));
+    g.appendChild(wrapField("朝の移動（分）", minIn));
+  }
+
+  if (L.lesson === "あり") {
+    const st = mkTimeInput(L.lessonStart || "", (v)=>{ L.lessonStart=v; saveState(); render(); }, 60);
+    const en = mkTimeInput(L.lessonEnd || "", (v)=>{ L.lessonEnd=v; saveState(); render(); }, 60);
+    g.appendChild(wrapField("授業 開始", st));
+    g.appendChild(wrapField("授業 終了", en));
+  } else {
+    g.appendChild(wrapField("授業 開始", mkTimeInput("", ()=>{}, 60, true)));
+    g.appendChild(wrapField("授業 終了", mkTimeInput("", ()=>{}, 60, true)));
+  }
+
+  if (L.club === "あり") {
+    const st = mkTimeInput(L.clubStart || "", (v)=>{ L.clubStart=v; saveState(); render(); }, 60);
+    const en = mkTimeInput(L.clubEnd || "", (v)=>{ L.clubEnd=v; saveState(); render(); }, 60);
+    g.appendChild(wrapField("部活 開始", st));
+    g.appendChild(wrapField("部活 終了", en));
+  } else {
+    g.appendChild(wrapField("部活 開始", mkTimeInput("", ()=>{}, 60, true)));
+    g.appendChild(wrapField("部活 終了", mkTimeInput("", ()=>{}, 60, true)));
+  }
+
+  // return move options: 60 / 30 / 30x2
+  const returnSel = document.createElement("select");
+  [
+    { v:"60", t:"60分" },
+    { v:"30", t:"30分" },
+    { v:"30x2", t:"30分×2" },
+  ].forEach(x=>{
+    const o = document.createElement("option");
+    o.value = x.v; o.textContent = x.t;
+    returnSel.appendChild(o);
+  });
+  returnSel.value = L.returnMoveType || "60";
+  returnSel.addEventListener("change", ()=>{
+    L.returnMoveType = returnSel.value;
+    if (L.returnMoveType !== "30x2") L.second30Start = "";
+    saveState(); render();
+  });
+  g.appendChild(wrapField("帰りの移動", returnSel));
+
+  // ★ 2回目の30分移動開始だけ select（:45なし）
+  if (L.returnMoveType === "30x2") {
+    const st2 = mkSelect(SECOND_MOVE_OPTIONS, L.second30Start || "", (v)=>{ L.second30Start=v; saveState(); render(); }, true);
+    g.appendChild(wrapField("2回目移動 開始", st2));
+  } else {
+    g.appendChild(wrapField("2回目移動 開始", mkSelect([""], "", ()=>{}, true)));
+  }
+
+  settingsCard.appendChild(g);
+  settingsCard.appendChild(el("div", "hr"));
+
+  // bath / prep / sleep
+  const g2 = el("div", "grid2");
+
+  const bathSel = mkSelect(["あり","なし"], L.bath || "なし", (v)=>{ L.bath=v; saveState(); render(); });
+  const bathMin = document.createElement("input");
+  bathMin.type="number";
+  bathMin.value=String(L.bathMin ?? 60);
+  bathMin.addEventListener("change", ()=>{ L.bathMin = clamp(parseInt(bathMin.value||"60",10),1,300); saveState(); render(); });
+  g2.appendChild(wrapField("風呂", bathSel));
+  g2.appendChild(wrapField("風呂（分）", bathMin));
+
+  const prepSel = mkSelect(["あり","なし"], L.prep || "なし", (v)=>{ L.prep=v; saveState(); render(); });
+  const prepMin = document.createElement("input");
+  prepMin.type="number";
+  prepMin.value=String(L.prepMin ?? 15);
+  prepMin.addEventListener("change", ()=>{ L.prepMin = clamp(parseInt(prepMin.value||"15",10),1,120); saveState(); render(); });
+  g2.appendChild(wrapField("準備", prepSel));
+  g2.appendChild(wrapField("準備（分）", prepMin));
+
+  const sleepSel = mkSelect(["あり","なし"], L.sleepUse || "なし", (v)=>{ L.sleepUse=v; saveState(); render(); });
+  g2.appendChild(wrapField("就寝", sleepSel));
+
+  const bed = mkTimeInput(L.bedTime || "", (v)=>{ L.bedTime=v; saveState(); render(); }, 60);
+  const wake = mkTimeInput(L.wakeTime || "", (v)=>{ L.wakeTime=v; saveState(); render(); }, 60);
+  g2.appendChild(wrapField("就寝時刻", bed));
+  g2.appendChild(wrapField("起床時刻", wake));
+
+  settingsCard.appendChild(g2);
+
+  const err = (L.__err || "");
+  if (err) settingsCard.appendChild(el("div", "warn", err));
+
+  const row2 = el("div", "row");
+  row2.style.justifyContent="space-between";
+  row2.appendChild(el("div", "note", "変更は自動で反映されます。"));
+
+  const btnClear = mkBtn("この日の生活を全消去", "btnDanger", () => {
+    delete state.lifeByDate[state.selectedDate];
+    saveState();
+    render();
+  });
+  row2.appendChild(btnClear);
+  settingsCard.appendChild(el("div","hr"));
+  settingsCard.appendChild(row2);
+
+  tabLife.appendChild(settingsCard);
+
+  // add custom life block
+  const addCard = el("div","card");
+  addCard.appendChild(el("div","", "生活ブロックを追加"));
+
+  const addGrid = el("div","grid2");
+  const typeSel = mkSelect(LIFE_TYPE_OPTIONS, "-", ()=>{}, false);
+  const contentIn = document.createElement("input");
+  contentIn.type="text";
+  contentIn.placeholder="例：病院";
+
+  addGrid.appendChild(wrapField("種類", typeSel));
+  addGrid.appendChild(wrapField("内容", contentIn));
+  addCard.appendChild(addGrid);
+
+  const modeRow = el("div","row");
+  const r1 = document.createElement("input"); r1.type="radio"; r1.name="lifeMode"; r1.checked=true;
+  const r2 = document.createElement("input"); r2.type="radio"; r2.name="lifeMode";
+  const l1 = el("label","row",""); l1.style.gap="8px"; l1.appendChild(r1); l1.appendChild(el("div","", "何分間"));
+  const l2 = el("label","row",""); l2.style.gap="8px"; l2.appendChild(r2); l2.appendChild(el("div","", "時刻（開始→終了）"));
+  modeRow.appendChild(l1); modeRow.appendChild(l2);
+  addCard.appendChild(modeRow);
+
+  const startTime = mkTimeInput("", ()=>{}, 60);
+  const endTime = mkTimeInput("", ()=>{}, 60);
+
+  const minIn = document.createElement("input");
+  minIn.type="number";
+  minIn.value="";
+
+  const timeArea = el("div","grid1");
+  addCard.appendChild(timeArea);
+
+  function renderTimeArea() {
+    timeArea.innerHTML="";
+    if (r1.checked) {
+      const g = el("div","grid2");
+      g.appendChild(wrapField("開始", startTime));
+      g.appendChild(wrapField("分", minIn));
+      timeArea.appendChild(g);
+    } else {
+      const g = el("div","grid2");
+      g.appendChild(wrapField("開始", startTime));
+      g.appendChild(wrapField("終了", endTime));
+      timeArea.appendChild(g);
+    }
+  }
+  r1.addEventListener("change", renderTimeArea);
+  r2.addEventListener("change", renderTimeArea);
+
+  typeSel.addEventListener("change", () => {
+    const t = typeSel.value;
+    if (t !== "-" && LIFE_AUTO_MIN[t] != null) {
+      if (!minIn.value) minIn.value = String(LIFE_AUTO_MIN[t]);
+      if (!contentIn.value) contentIn.value = "";
+    }
+  });
+
+  renderTimeArea();
+
+  const btnAdd = mkBtn("追加", "btnPrimary", () => {
+    const lifeNow = state.lifeByDate[state.selectedDate] || emptyLifeSettings();
+    state.lifeByDate[state.selectedDate] = lifeNow;
+
+    const type = typeSel.value || "-";
+    const content = (contentIn.value || "").trim();
+
+    if (r1.checked) {
+      if (!startTime.value) return;
+      const mins = parseInt(minIn.value || "0", 10);
+      if (!Number.isFinite(mins) || mins <= 0) return;
+
+      lifeNow.customBlocks.push({
+        id: uid(),
+        type,
+        content,
+        mode: "minutes",
+        start: startTime.value,
+        minutes: mins,
+      });
+    } else {
+      if (!startTime.value || !endTime.value) return;
+      lifeNow.customBlocks.push({
+        id: uid(),
+        type,
+        content,
+        mode: "clock",
+        start: startTime.value,
+        end: endTime.value,
+      });
+    }
+
+    // reset
+    startTime.value = "";
+    endTime.value = "";
+    minIn.value = "";
+    contentIn.value = "";
+    typeSel.value = "-";
+
+    saveState();
+    render();
+  });
+
+  const btnClearCustom = mkBtn("この日の生活を全消去", "btnDanger", () => {
+    const lifeNow = state.lifeByDate[state.selectedDate];
+    if (!lifeNow) return;
+    lifeNow.customBlocks = [];
+    saveState();
+    render();
+  });
+
+  const addBtns = el("div","row");
+  addBtns.style.justifyContent="space-between";
+  addBtns.appendChild(btnAdd);
+  addBtns.appendChild(btnClearCustom);
+
+  addCard.appendChild(el("div","hr"));
+  addCard.appendChild(addBtns);
+
+  tabLife.appendChild(addCard);
+
+  // life list
+  const listCard = el("div","card");
+  listCard.appendChild(el("div","", "この日の生活リスト"));
+
+  const blocks = buildAllBlocksForWindow().filter(b => {
+    const d = dateStr(new Date(b.startMs));
+    return d === state.selectedDate && b.kind === "life";
+  });
+
+  if (!blocks.length) {
+    listCard.appendChild(el("div","note","（生活ブロックはまだありません）"));
+  } else {
+    const box = el("div","grid1");
+    blocks.forEach(b=>{
+      const row = el("div","row");
+      row.style.justifyContent="space-between";
+      const left = el("div","grid1");
+      left.style.gap="2px";
+      left.appendChild(el("div","", `${b.name}`));
+      left.appendChild(el("div","note", fmtRange(b.startMs, b.endMs)));
+      row.appendChild(left);
+
+      const del = mkBtn("✕", "btnSmall btnDanger smallX", () => {
+        const lifeNow = state.lifeByDate[state.selectedDate];
+        if (!lifeNow) return;
+        const cbId = b.meta?.cbId;
+        if (cbId) {
+          lifeNow.customBlocks = (lifeNow.customBlocks || []).filter(x => x.id !== cbId);
+          saveState();
+          render();
+        }
+      });
+
+      row.appendChild(del);
+
+      row.addEventListener("click", (e) => {
+        if (e.target === del) return;
+        const bd = el("div","grid1");
+        bd.appendChild(el("div","", b.name));
+        bd.appendChild(el("div","note", fmtRange(b.startMs, b.endMs)));
+        openModal("確認", bd, [mkBtn("OK", "btnPrimary", closeModal)]);
+      });
+
+      box.appendChild(row);
+      box.appendChild(el("div","hr"));
+    });
+    listCard.appendChild(box);
+  }
+
+  tabLife.appendChild(listCard);
 }
 
 /* ===== render: study ===== */
@@ -1026,9 +1360,342 @@ function subjectColorFromGroup(groupKey) {
 }
 
 function renderStudy() {
-  // ここも現行コードに “btnRow.classList.add('taskBtns')” を入れるのが修正点
+  /* ここは現行のまま（変更なし） */
   tabStudy.innerHTML = "";
-  tabStudy.appendChild(el("div","card","（renderStudyは現行のまま。↑↓✕を一番右にするには taskBtns を付ける）"));
+
+  const dateCard = el("div","card");
+  const row = el("div","row");
+  const dateInput = document.createElement("input");
+  dateInput.type="date";
+  dateInput.value=state.selectedDate;
+  dateInput.addEventListener("change", ()=>{
+    state.selectedDate = dateInput.value || todayStr();
+    saveState();
+    render();
+  });
+  row.appendChild(wrapField("日付", dateInput));
+  dateCard.appendChild(row);
+  tabStudy.appendChild(dateCard);
+
+  const list = state.studyByDate[state.selectedDate] || [];
+  if (!state.studyByDate[state.selectedDate]) state.studyByDate[state.selectedDate] = [];
+
+  const addCard = el("div","card");
+  addCard.appendChild(el("div","", "勉強タスクを追加"));
+
+  const groupSel = document.createElement("select");
+  GROUPS.forEach(g=>{
+    const o = document.createElement("option");
+    o.value=g.key; o.textContent=g.name;
+    groupSel.appendChild(o);
+  });
+  groupSel.value="none";
+
+  let subjectSel = document.createElement("select");
+  let otherSubjectIn = document.createElement("input");
+  otherSubjectIn.type="text";
+  otherSubjectIn.placeholder="科目名";
+  otherSubjectIn.hidden = true;
+
+  let taskTypeSel = document.createElement("select");
+  let otherTaskTypeIn = document.createElement("input");
+  otherTaskTypeIn.type="text";
+  otherTaskTypeIn.placeholder="内容";
+  otherTaskTypeIn.hidden = true;
+
+  function setSubjectOptions(groupKey) {
+    subjectSel.innerHTML="";
+    const opts = SUBJECTS_BY_GROUP[groupKey] || [];
+    const addOpt = (v)=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; subjectSel.appendChild(o); };
+    addOpt("—");
+    opts.forEach(addOpt);
+    subjectSel.value="—";
+    otherSubjectIn.hidden = (groupKey !== "other");
+    if (groupKey === "other") subjectSel.value = "その他";
+    setTaskTypeOptions(subjectSel.value);
+  }
+  function setTaskTypeOptions(subject) {
+    taskTypeSel.innerHTML="";
+    let opts;
+    if (subject === "その他") opts = TASKTYPE_UNION;
+    else opts = TASKTYPE_BY_SUBJECT[subject] || ["—"];
+    opts.forEach(v=>{
+      const o=document.createElement("option");
+      o.value=v; o.textContent=v;
+      taskTypeSel.appendChild(o);
+    });
+    taskTypeSel.value="—";
+    otherTaskTypeIn.hidden = true;
+  }
+
+  groupSel.addEventListener("change", ()=>{
+    setSubjectOptions(groupSel.value);
+  });
+  subjectSel.addEventListener("change", ()=>{
+    setTaskTypeOptions(subjectSel.value);
+  });
+
+  setSubjectOptions("none");
+
+  const durIn = document.createElement("input");
+  durIn.type="number";
+  durIn.value="30";
+
+  const perRangeIn = document.createElement("input");
+  perRangeIn.type="number";
+  perRangeIn.placeholder="（任意）";
+
+  let ranges = [{ start:"", end:"" }];
+
+  function renderRanges(container) {
+    container.innerHTML="";
+    ranges.forEach((r, idx)=>{
+      const wrap = el("div","card");
+      wrap.style.background="rgba(15,21,38,.6)";
+      wrap.style.borderColor="rgba(255,255,255,.08)";
+      wrap.style.padding="10px";
+
+      const st = document.createElement("input");
+      st.type="text"; st.placeholder="開始 例：11(2-3)"; st.value=r.start||"";
+      const en = document.createElement("input");
+      en.type="text"; en.placeholder="終了 例：15(3)"; en.value=r.end||"";
+
+      st.addEventListener("input", ()=>{ r.start=st.value; });
+      en.addEventListener("input", ()=>{ r.end=en.value; });
+
+      const del = mkBtn("✕", "btnSmall btnDanger smallX", ()=>{
+        ranges.splice(idx,1);
+        if (!ranges.length) ranges.push({start:"", end:""});
+        renderRanges(container);
+      });
+
+      const g = el("div","grid1");
+      g.appendChild(wrapField("開始", st));
+      g.appendChild(wrapField("終了", en));
+
+      const rr = el("div","row");
+      rr.style.justifyContent="space-between";
+      rr.appendChild(g);
+      rr.appendChild(del);
+
+      wrap.appendChild(rr);
+      container.appendChild(wrap);
+    });
+
+    const add = mkBtn("範囲を追加", "btnSmall", ()=>{
+      ranges.push({start:"", end:""});
+      renderRanges(container);
+    });
+    container.appendChild(add);
+  }
+
+  const formGrid = el("div","grid2");
+  formGrid.appendChild(wrapField("系", groupSel));
+  formGrid.appendChild(wrapField("科目", subjectSel));
+  addCard.appendChild(formGrid);
+
+  const otherGrid = el("div","grid2");
+  otherGrid.appendChild(wrapField("その他の科目名", otherSubjectIn));
+  otherGrid.appendChild(wrapField("内容", taskTypeSel));
+  addCard.appendChild(otherGrid);
+
+  addCard.appendChild(wrapField("（任意）内容入力", otherTaskTypeIn));
+  addCard.appendChild(el("div","hr"));
+
+  addCard.appendChild(wrapField("時間（分）", durIn));
+  addCard.appendChild(wrapField("1範囲あたり（分）", perRangeIn));
+
+  const rangesBox = el("div","grid1");
+  addCard.appendChild(el("div","hr"));
+  addCard.appendChild(el("div","", "範囲"));
+  addCard.appendChild(rangesBox);
+  renderRanges(rangesBox);
+
+  const btnAdd = mkBtn("追加", "btnPrimary", ()=>{
+    const groupKey = groupSel.value;
+    let subject = subjectSel.value;
+    if (groupKey === "other") subject = "その他";
+    if (subject === "—") subject = "";
+
+    const subjectName = (groupKey === "other") ? (otherSubjectIn.value || "その他") : subject;
+    let taskType = taskTypeSel.value;
+    if (taskType === "—") taskType = "";
+    if (otherTaskTypeIn.value.trim()) taskType = otherTaskTypeIn.value.trim();
+
+    const task = {
+      id: uid(),
+      groupKey,
+      subject: subjectName || "—",
+      subjectColor: subjectColorFromGroup(groupKey),
+      taskType: taskType || "—",
+      durationMin: clamp(parseInt(durIn.value||"30",10), 1, 2000),
+      perRangeMin: (perRangeIn.value ? clamp(parseInt(perRangeIn.value,10), 1, 300) : ""),
+      ranges: deepClone(ranges).map(x=>({start:(x.start||"").trim(), end:(x.end||"").trim()})),
+    };
+
+    state.studyByDate[state.selectedDate].push(task);
+    saveState();
+
+    durIn.value="30";
+    perRangeIn.value="";
+    ranges = [{start:"", end:""}];
+    render();
+  });
+
+  addCard.appendChild(el("div","hr"));
+  addCard.appendChild(btnAdd);
+
+  tabStudy.appendChild(addCard);
+
+  const listCard = el("div","card");
+  listCard.appendChild(el("div","", "この日の勉強リスト"));
+
+  if (!list.length) {
+    listCard.appendChild(el("div","note","（勉強タスクはまだありません）"));
+  } else {
+    const box = el("div","grid1");
+    list.forEach((t, idx)=>{
+      const item = el("div","block");
+      const bar = el("div", `bar ${t.subjectColor || "gray"}`);
+      item.appendChild(bar);
+
+      const top = el("div","blockTop");
+      top.appendChild(el("div","blockName", `${t.subject}｜${t.taskType}`));
+
+      const btnRow = el("div","row taskBtns");
+      btnRow.style.gap="6px";
+
+      const up = mkBtn("↑", "btnSmall", ()=>{
+        if (idx<=0) return;
+        const arr = state.studyByDate[state.selectedDate];
+        [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]];
+        saveState(); render();
+      });
+      const down = mkBtn("↓", "btnSmall", ()=>{
+        const arr = state.studyByDate[state.selectedDate];
+        if (idx>=arr.length-1) return;
+        [arr[idx+1], arr[idx]] = [arr[idx], arr[idx+1]];
+        saveState(); render();
+      });
+
+      const del = mkBtn("✕", "btnSmall btnDanger smallX", ()=>{
+        state.studyByDate[state.selectedDate] = state.studyByDate[state.selectedDate].filter(x=>x.id!==t.id);
+        saveState(); render();
+      });
+
+      btnRow.appendChild(up);
+      btnRow.appendChild(down);
+      btnRow.appendChild(del);
+      top.appendChild(btnRow);
+
+      item.appendChild(top);
+
+      const steps = getTaskSteps(t);
+      const hasRealSteps = !(steps.length===1 && steps[0]==="（範囲なし）");
+      const sec = computeTotalSec(t);
+      const estMin = Math.ceil(sec/60);
+
+      item.appendChild(el("div","blockTag", hasRealSteps ? `範囲 ${steps.length} / 見積 ${estMin}分` : `見積 ${estMin}分`));
+
+      item.addEventListener("click", (e)=>{
+        if (e.target.closest("button")) return;
+        openStudyEdit(t.id);
+      });
+
+      box.appendChild(item);
+    });
+
+    listCard.appendChild(box);
+  }
+
+  listCard.appendChild(el("div","hr"));
+  listCard.appendChild(el("div","note","自動で組み立てはタイムラインに自動反映されます。入り切らない場合は末尾のタスクは予定に入りません。"));
+
+  tabStudy.appendChild(listCard);
+}
+
+function openStudyEdit(taskId) {
+  const found = findTaskById(taskId);
+  if (!found) return;
+  const t = found.task;
+
+  const body = el("div","grid1");
+
+  const dur = document.createElement("input");
+  dur.type="number";
+  dur.value=String(t.durationMin || 30);
+
+  const prm = document.createElement("input");
+  prm.type="number";
+  prm.placeholder="（任意）";
+  prm.value = t.perRangeMin || "";
+
+  body.appendChild(wrapField("時間（分）", dur));
+  body.appendChild(wrapField("1範囲あたり（分）", prm));
+
+  const rbox = el("div","grid1");
+  const localRanges = deepClone(t.ranges || []);
+  if (!localRanges.length) localRanges.push({start:"", end:""});
+
+  function renderLocalRanges() {
+    rbox.innerHTML="";
+    localRanges.forEach((r, idx)=>{
+      const box = el("div","card");
+      box.style.background="rgba(15,21,38,.6)";
+      box.style.borderColor="rgba(255,255,255,.08)";
+      box.style.padding="10px";
+
+      const st = document.createElement("input");
+      st.type="text"; st.value=r.start||"";
+      const en = document.createElement("input");
+      en.type="text"; en.value=r.end||"";
+
+      st.addEventListener("input", ()=>{ r.start=st.value; });
+      en.addEventListener("input", ()=>{ r.end=en.value; });
+
+      const del = mkBtn("✕", "btnSmall btnDanger smallX", ()=>{
+        localRanges.splice(idx,1);
+        if (!localRanges.length) localRanges.push({start:"", end:""});
+        renderLocalRanges();
+      });
+
+      const g = el("div","grid1");
+      g.appendChild(wrapField("開始", st));
+      g.appendChild(wrapField("終了", en));
+
+      const rr = el("div","row");
+      rr.style.justifyContent="space-between";
+      rr.appendChild(g);
+      rr.appendChild(del);
+
+      box.appendChild(rr);
+      rbox.appendChild(box);
+    });
+
+    rbox.appendChild(mkBtn("範囲を追加", "btnSmall", ()=>{
+      localRanges.push({start:"", end:""});
+      renderLocalRanges();
+    }));
+  }
+  renderLocalRanges();
+
+  body.appendChild(el("div","hr"));
+  body.appendChild(el("div","", "範囲"));
+  body.appendChild(rbox);
+
+  const btnSave = mkBtn("OK", "btnPrimary", ()=>{
+    t.durationMin = clamp(parseInt(dur.value||"30",10),1,2000);
+    t.perRangeMin = (prm.value ? clamp(parseInt(prm.value,10),1,300) : "");
+    t.ranges = localRanges.map(x=>({start:(x.start||"").trim(), end:(x.end||"").trim()}));
+    saveState();
+    closeModal();
+    render();
+  });
+
+  openModal("編集", body, [
+    mkBtn("キャンセル", "btnGhost", closeModal),
+    btnSave,
+  ]);
 }
 
 /* ===== render: timeline (fixed time axis + NOW dashed) ===== */
